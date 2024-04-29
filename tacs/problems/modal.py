@@ -453,6 +453,27 @@ class ModalProblem(TACSProblem):
             states[:] = eigVector.getArray()
         return eigVal, eigVector.getArray()
 
+    def getMatrices(self):
+        """
+        Return the modal matrices of the current problem
+
+        Returns
+        --------
+        m : numpy.ndarray
+            modal mass matrix
+
+        k : numpy.ndarray
+            modal stiffness matrix
+        """
+        # Compute modal matrices
+        m = np.zeros((self.numEigs, self.numEigs))
+        k = np.zeros((self.numEigs, self.numEigs))
+        for i in range(self.numEigs):
+            for j in range(self.numEigs):
+                m[i, j] = self.freqSolver.extractMatrix(i, j, tacs.TACS.MASS_MATRIX)
+                k[i, j] = self.freqSolver.extractMatrix(i, j, tacs.TACS.STIFFNESS_MATRIX)
+        return m, k
+
     def writeSolution(self, outputDir=None, baseName=None, number=None, indices=None):
         """
         This is a generic shell function that writes the output

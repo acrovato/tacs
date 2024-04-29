@@ -493,6 +493,7 @@ cdef extern from "TACSBuckling.h":
         void solve(KSMPrint*, int)
         TacsScalar extractEigenvalue(int, TacsScalar*)
         TacsScalar extractEigenvector(int, TACSBVec*, TacsScalar*)
+        TacsScalar extractMatrix(int, int, ElementMatrixType)
         void evalEigenDVSens(int, TACSBVec*)
         void evalEigenXptSens(int, TACSBVec*)
 

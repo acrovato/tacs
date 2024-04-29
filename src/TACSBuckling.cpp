@@ -904,6 +904,38 @@ TacsScalar TACSFrequencyAnalysis::extractEigenvector(int n, TACSBVec *ans,
   }
 }
 
+/*!
+  Compute the (i,j) component of the modal mass or stiffness matrix
+*/
+TacsScalar TACSFrequencyAnalysis::extractMatrix(int i, int j, ElementMatrixType matType){
+    if ((matType == TACS_MASS_MATRIX && mmat) || matType == TACS_STIFFNESS_MATRIX) {
+        // Temporary vector
+        TACSBVec *t = assembler->createVec();
+        t->incref();
+        // Extract eigenvector j
+        TacsScalar eig, error;
+        eig = extractEigenvector(j, eigvec, &error);
+        // Multiply by matrix: M*u(j) and K*u(j)
+        if (matType == TACS_MASS_MATRIX)
+            mmat->mult(eigvec, t);
+        else
+            kmat->mult(eigvec, t);
+        // Extract eigenvector i
+        eig = extractEigenvector(i, eigvec, &error);
+        // Pre-multiply by transposed vector: u(i)^{T}*M*u(j) and u(i)^{T}*K*u(j)
+        TacsScalar val = t->dot(eigvec);
+        // Free memory
+        t->decref();
+        return val;
+    }
+    else {
+        fprintf(stderr, "TACSFrequency: the parameter \'matType\' must be "
+            "either \'TACS_MASS_MATRIX\' or \'TACS_STIFFNESS_MATRIX\'. "
+            "If \'TACS_MASS_MATRIX\' is given, the mass matrix must have been initialized.\n");
+        return 0.;
+    }
+}
+
 /*
   Check the orthogonality of the Lanczos subspace
 */

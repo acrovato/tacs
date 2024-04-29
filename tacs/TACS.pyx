@@ -3208,6 +3208,23 @@ cdef class FrequencyAnalysis:
         eigval = self.ptr.extractEigenvector(index, vec.getBVecPtr(), &err)
         return eigval, err
 
+    def extractMatrix(self, int i, int j, ElementMatrixType matType):
+        """
+        Compute and extract the (i,j) component of the modal mass or stiffness matrix.
+
+        M_modal = u(i)^{T}*M*q(j), K_modal = u(i)^{T}*K*u(j),
+        where u(n) denotes the nth eigenvector
+
+        Args:
+            i (int): The row index of the desired matrix component
+            j (int): The column index of the desired matrix component
+            matType (ElementMatrixType): The type of matrix (mass or stiffness)
+
+        Returns:
+            The matrix component
+        """
+        return self.ptr.extractMatrix(i, j, matType)
+
     def evalEigenDVSens(self, int index, Vec dvsens):
         """
         Compute the derivative of the eigenvalues w.r.t. the design variables

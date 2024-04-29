@@ -156,6 +156,7 @@ class TACSFrequencyAnalysis : public TACSObject {
   // ------------------------------
   TacsScalar extractEigenvalue(int n, TacsScalar *error);
   TacsScalar extractEigenvector(int n, TACSBVec *ans, TacsScalar *error);
+  TacsScalar extractMatrix(int i, int j, ElementMatrixType matType);
   void checkEigenvector(int n);
   TacsScalar checkOrthogonality();
 
