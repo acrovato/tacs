@@ -37,6 +37,7 @@ class TacsSolver(om.ExplicitComponent):
         self.options.declare('write_solution', desc='flag to write solution')
         self.options.declare('x_mask', desc='array to recover true degrees of freedom (node coordinates)')
         self.options.declare('q_mask', desc='array to recover true degrees of freedom (mode shapes)')
+        self.options.declare('n_nodes', desc='number of retained nodes')
 
     def setup(self):
         self.asb = self.options['fea_assembler']
@@ -44,10 +45,9 @@ class TacsSolver(om.ExplicitComponent):
         self.x_mask = self.options['x_mask']
         self.q_mask = self.options['q_mask']
         self.n_modes = self.pbl.getNumEigs()
-        n_dof = 3 * (self.asb.getNumOwnedNodes() - self.asb.getNumOwnedMultiplierNodes())
         self.add_input('dv_struct', shape_by_conn=True, desc='structural coordinates')
         self.add_input('x_struct0', shape_by_conn=True, desc='structural coordinates')
-        self.add_output('q_struct', val=np.zeros((n_dof, self.n_modes)), desc='modal displacements')
+        self.add_output('q_struct', val=np.zeros((3 * self.options['n_nodes'], self.n_modes)), desc='modal displacements')
         self.add_output('M', val=np.zeros((self.n_modes, self.n_modes)), desc='mass matrix')
         self.add_output('K', val=np.zeros((self.n_modes, self.n_modes)), desc='stiffness matrix')
         # Partials
@@ -108,7 +108,7 @@ class TacsBuilder(Builder):
     write_solution : bool
         Flag indicating whether to write solution
     """
-    def __init__(self, mesh_file, problem_cfg, element_callback=None, pytacs_options=None, write_solution=True):
+    def __init__(self, mesh_file, problem_cfg, element_callback=None, components_tag=None, pytacs_options=None, write_solution=True):
         """Instantiate and initialize TACS components
 
         Parameters
@@ -119,6 +119,8 @@ class TacsBuilder(Builder):
             Dictionary to configure the modal problem
         element_callback : collections.abc.Callable, optional
             User-defined callback function for setting up TACS elements and element DVs (default: None)
+        components_tag : list[str]
+            List of tag names for which nodes will be included (default: None)
         pytacs_options : dict, optional
             Options dictionary passed to pyTACS assembler (default: None)
         write_solution : bool, optional
@@ -131,9 +133,12 @@ class TacsBuilder(Builder):
         self.fea_assembler.initialize(element_callback)
         # Set up the problem
         self.fea_problem = self.fea_assembler.createModalProblem('modal', problem_cfg['sigma'], problem_cfg['num_modes'])
+        # Select nodes from components
+        nodes_id = self._select_nodes(components_tag)
+        self.n_nodes = len(nodes_id)
         # Create masks
-        self.x_mask = self._create_mask(3)
-        self.q_mask = self._create_mask(6)
+        self.x_mask = self._create_mask(nodes_id, 3)
+        self.q_mask = self._create_mask(nodes_id, 6)
         # Save other parameters
         self.write_solution = write_solution
 
@@ -145,24 +150,43 @@ class TacsBuilder(Builder):
     def get_solver(self, scenario_name=''):
         """Return OpenMDAO component containing the solver
         """
-        return TacsSolver(fea_assembler=self.fea_assembler, fea_problem=self.fea_problem, write_solution=self.write_solution, x_mask=self.x_mask, q_mask=self.q_mask)
+        return TacsSolver(fea_assembler=self.fea_assembler, fea_problem=self.fea_problem, write_solution=self.write_solution, x_mask=self.x_mask, q_mask=self.q_mask, n_nodes=self.n_nodes)
 
     def get_number_of_nodes(self):
         """Return the number of (true) nodes
         """
-        return (self.fea_assembler.getNumOwnedNodes() - self.fea_assembler.getNumOwnedMultiplierNodes())
+        return self.n_nodes
 
     def get_number_of_dv(self):
+        """Return the number of degrees of freedom
+        """
         return self.fea_assembler.getTotalNumDesignVars()
 
-    def _create_mask(self, vars_node):
-        """Create a mask to recover array indices associated to true degrees of freedom
+    def _select_nodes(self, components):
+        """Select nodes from given components
         
         Parameters
         ----------
+        components : list[str]
+            List of tag names for which nodes will be included
+        """
+        if components is None:
+            nodes_id = np.arange(self.fea_assembler.getNumOwnedNodes())
+        else:
+            nodes_id = self.fea_assembler.getLocalNodeIDsForComps(self.fea_assembler.selectCompIDs(components))
+        mults_id = self.fea_assembler.getLocalMultiplierNodeIDs()
+        return list(set(nodes_id) - set(mults_id))
+
+    def _create_mask(self, nodes_id, vars_node):
+        """Create a mask to recover array indices associated to retained true degrees of freedom
+        
+        Parameters
+        ----------
+        nodes_id : list[int]
+            index of retained nodes
         vars_node : int
             Number of variables per node
         """
-        mask = np.full((self.fea_assembler.getNumOwnedNodes(), vars_node), True)
-        mask[self.fea_assembler.getLocalMultiplierNodeIDs(), :] = False
+        mask = np.full((self.fea_assembler.getNumOwnedNodes(), vars_node), False)
+        mask[nodes_id, :] = True
         return mask.flatten()
