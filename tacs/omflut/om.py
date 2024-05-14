@@ -74,7 +74,7 @@ class TacsSolver(om.ExplicitComponent):
     def compute_partials(self, inputs, partials):
         # Approximate derivative of stiffness matrix diagonal entries by derivative of eigenvalues
         func_sens = {}
-        self.pbl.evalFunctionsSens(func_sens)
+        self.pbl.evalFunctionsSens(func_sens, evalVars='dv')
         for i in range(self.n_modes):
             d_lambda = func_sens[f'{self.pbl.name}_eigsm.{i}']
             partials['K', 'dv_struct'][np.ravel_multi_index(([i], [i]), (self.n_modes, self.n_modes)), :] = d_lambda['struct']

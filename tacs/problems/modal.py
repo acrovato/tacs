@@ -303,7 +303,7 @@ class ModalProblem(TACSProblem):
             key = f"{self.name}_{funcName}"
             funcs[key], _ = self.getVariables(mode_i)
 
-    def evalFunctionsSens(self, funcsSens, evalFuncs=None):
+    def evalFunctionsSens(self, funcsSens, evalFuncs=None, evalVars=None):
         """
         This is the main routine for returning useful (sensitivity)
         information from problem. The derivatives of the functions
@@ -317,6 +317,8 @@ class ModalProblem(TACSProblem):
             Dictionary into which the derivatives are saved.
         evalFuncs : iterable object containing strings
             The functions the user wants returned
+        evalVars : iterable object containing strings
+            The variables the user wants returned
 
         Examples
         --------
@@ -349,11 +351,13 @@ class ModalProblem(TACSProblem):
             key = f"{self.name}_{funcName}"
             funcsSens[key] = {}
             # Evaluate dv sens
-            self.freqSolver.evalEigenDVSens(mode_i, dvSens)
-            funcsSens[key][self.varName] = dvSens.getArray().copy()
+            if 'dv' in evalVars or evalVars is None:
+                self.freqSolver.evalEigenDVSens(mode_i, dvSens)
+                funcsSens[key][self.varName] = dvSens.getArray().copy()
             # Evaluate nodal sens
-            self.freqSolver.evalEigenXptSens(mode_i, xptSens)
-            funcsSens[key][self.coordName] = xptSens.getArray().copy()
+            if 'xpt' in evalVars or evalVars is None:
+                self.freqSolver.evalEigenXptSens(mode_i, xptSens)
+                funcsSens[key][self.coordName] = xptSens.getArray().copy()
 
     ####### Modal solver methods ########
 
