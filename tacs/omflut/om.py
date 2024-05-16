@@ -48,7 +48,7 @@ class TacsSolver(om.ExplicitComponent):
         self.add_input('dv_struct', shape_by_conn=True, desc='structural coordinates')
         self.add_input('x_struct0', shape_by_conn=True, desc='structural coordinates')
         self.add_output('q_struct', val=np.zeros((3 * self.options['n_nodes'], self.n_modes)), desc='modal displacements')
-        self.add_output('M', val=np.zeros((self.n_modes, self.n_modes)), desc='mass matrix')
+        self.add_output('M', val=np.identity(self.n_modes), desc='mass matrix')
         self.add_output('K', val=np.zeros((self.n_modes, self.n_modes)), desc='stiffness matrix')
         # Partials
         # self.declare_partials(of=['q_struct', 'M', 'K'], wrt=['x_struct0'], method='exact')
@@ -68,8 +68,10 @@ class TacsSolver(om.ExplicitComponent):
         for i in range(self.n_modes):
             _, q_s = self.pbl.getVariables(i)
             outputs['q_struct'][:, i] = self._extract_data(q_s[self.q_mask])
-        # Set modal matrices
-        outputs['M'], outputs['K'] = self.pbl.getMatrices()
+        # Get eigenvalues and set modal stiffness matrix
+        funcs = {}
+        self.pbl.evalFunctions(funcs)
+        outputs['K'] = np.diag(list(funcs.values()))
 
     def compute_partials(self, inputs, partials):
         # Approximate derivative of stiffness matrix diagonal entries by derivative of eigenvalues
