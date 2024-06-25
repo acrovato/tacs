@@ -38,14 +38,16 @@ class TacsSolver(om.ExplicitComponent):
         self.options.declare('x_mask', desc='array to recover true degrees of freedom (node coordinates)')
         self.options.declare('q_mask', desc='array to recover true degrees of freedom (mode shapes)')
         self.options.declare('n_nodes', desc='number of retained nodes')
+        self.options.declare('retained_modes', desc='list of retained modes')
 
     def setup(self):
         self.asb = self.options['fea_assembler']
         self.pbl = self.options['fea_problem']
         self.x_mask = self.options['x_mask']
         self.q_mask = self.options['q_mask']
-        self.n_modes = self.pbl.getNumEigs()
-        self.add_input('dv_struct', shape_by_conn=True, desc='structural coordinates')
+        self.retained_modes = self.options['retained_modes']
+        self.n_modes = len(self.retained_modes)
+        self.add_input('dv_struct', shape_by_conn=True, desc='structural design variables')
         self.add_input('x_struct0', shape_by_conn=True, desc='structural coordinates')
         self.add_output('q_struct', val=np.zeros((3 * self.options['n_nodes'], self.n_modes)), desc='modal displacements')
         self.add_output('M', val=np.identity(self.n_modes), desc='mass matrix')
@@ -66,19 +68,19 @@ class TacsSolver(om.ExplicitComponent):
             self.pbl.writeSolution()
         # Mask and set modes
         for i in range(self.n_modes):
-            _, q_s = self.pbl.getVariables(i)
+            _, q_s = self.pbl.getVariables(self.retained_modes[i])
             outputs['q_struct'][:, i] = self._extract_data(q_s[self.q_mask])
         # Get eigenvalues and set modal stiffness matrix
         funcs = {}
         self.pbl.evalFunctions(funcs)
-        outputs['K'] = np.diag(list(funcs.values()))
+        outputs['K'] = np.diag(list(funcs.values()))[np.ix_(self.retained_modes, self.retained_modes)]
 
     def compute_partials(self, inputs, partials):
         # Approximate derivative of stiffness matrix diagonal entries by derivative of eigenvalues
         func_sens = {}
         self.pbl.evalFunctionsSens(func_sens, evalVars='dv')
         for i in range(self.n_modes):
-            d_lambda = func_sens[f'{self.pbl.name}_eigsm.{i}']
+            d_lambda = func_sens[f'{self.pbl.name}_eigsm.{self.retained_modes[i]}']
             partials['K', 'dv_struct'][np.ravel_multi_index(([i], [i]), (self.n_modes, self.n_modes)), :] = d_lambda['struct']
 
     def _extract_data(self, q):
@@ -110,17 +112,21 @@ class TacsBuilder(Builder):
     write_solution : bool
         Flag indicating whether to write solution
     """
-    def __init__(self, mesh_file, problem_cfg, element_callback=None, components_tag=None, pytacs_options=None, write_solution=True):
+    def __init__(self, mesh_file, num_modes, sigma=1., element_callback=None, exclude_modes=None, components_tag=None, pytacs_options=None, write_solution=True):
         """Instantiate and initialize TACS components
 
         Parameters
         ----------
         mesh_file : str or pyNastran.bdf.bdf.BDF
             The BDF file or a pyNastran BDF object to load
-        problem_cfg : dict
-            Dictionary to configure the modal problem
+        num_modes : int
+            Number of modes
+        sigma : float
+            Guess for the lowest eigenvalue (default: 1.0)
         element_callback : collections.abc.Callable, optional
             User-defined callback function for setting up TACS elements and element DVs (default: None)
+        exclude_modes : list[int]
+            List of indices of modes to exclude from analysis (default: None)
         components_tag : list[str]
             List of tag names for which nodes will be included (default: None)
         pytacs_options : dict, optional
@@ -134,7 +140,9 @@ class TacsBuilder(Builder):
         self.fea_assembler = pyTACS(mesh_file, options=pytacs_options, comm=MPI.COMM_WORLD)
         self.fea_assembler.initialize(element_callback)
         # Set up the problem
-        self.fea_problem = self.fea_assembler.createModalProblem('modal', problem_cfg['sigma'], problem_cfg['num_modes'])
+        self.fea_problem = self.fea_assembler.createModalProblem('modal', sigma, num_modes)
+        self.retained_modes = list(range(num_modes))
+        if exclude_modes is not None: self.retained_modes = list(np.delete(self.retained_modes, exclude_modes))
         # Select nodes from components
         nodes_id = self._select_nodes(components_tag)
         self.n_nodes = len(nodes_id)
@@ -152,7 +160,7 @@ class TacsBuilder(Builder):
     def get_solver(self, scenario_name=''):
         """Return OpenMDAO component containing the solver
         """
-        return TacsSolver(fea_assembler=self.fea_assembler, fea_problem=self.fea_problem, write_solution=self.write_solution, x_mask=self.x_mask, q_mask=self.q_mask, n_nodes=self.n_nodes)
+        return TacsSolver(fea_assembler=self.fea_assembler, fea_problem=self.fea_problem, write_solution=self.write_solution, x_mask=self.x_mask, q_mask=self.q_mask, n_nodes=self.n_nodes, retained_modes=self.retained_modes)
 
     def get_number_of_nodes(self):
         """Return the number of (true) nodes
